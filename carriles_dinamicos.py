@@ -372,18 +372,27 @@ def main():
         if analizador.actualizar_carriles(frame_count):
             carriles_detectados = True
 
-        # Visualizar
-        mapa_visual = mapa.obtener_mapa_visual()
-        frame = cv2.addWeighted(frame, 0.7, mapa_visual, 0.3, 0)
+        # Verificar si tenemos suficientes carriles detectados (al menos 2)
+        carriles_activos = carriles_detectados and len(analizador.carriles) >= 2
 
-        # Dibujar líneas de tendencia de carriles
-        if carriles_detectados:
+        # Visualizar mapa de calor solo si no hay carriles detectados
+        if not carriles_activos:
+            # Modo de aprendizaje: mostrar mapa de calor con trayectorias
+            mapa_visual = mapa.obtener_mapa_visual()
+            frame = cv2.addWeighted(frame, 0.7, mapa_visual, 0.3, 0)
+        else:
+            # Modo de carriles: mapa de calor muy tenue o sin él
+            mapa_visual = mapa.obtener_mapa_visual()
+            frame = cv2.addWeighted(frame, 0.95, mapa_visual, 0.05, 0)
+
+        # Dibujar líneas de tendencia de carriles (cuando estén disponibles)
+        if carriles_activos:
             for i, carril in enumerate(analizador.carriles):
                 linea = carril['linea'].astype(np.int32)
                 color = colores_carril[i % len(colores_carril)]
 
-                # Dibujar línea gruesa
-                cv2.polylines(frame, [linea], False, color, 4)
+                # Dibujar línea gruesa y prominente
+                cv2.polylines(frame, [linea], False, color, 6)
 
                 # Etiqueta del carril
                 if len(linea) > 0:
@@ -392,14 +401,15 @@ def main():
                                (punto_medio[0] - 40, punto_medio[1] - 10),
                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
 
-        # Dibujar trayectorias activas
-        for track_id, trayectoria in mapa.trayectorias.items():
-            if len(trayectoria) > 1:
-                if track_id not in colores_track:
-                    colores_track[track_id] = colores[len(colores_track) % len(colores)]
-                color = colores_track[track_id]
-                puntos = np.array(list(trayectoria), dtype=np.int32)
-                cv2.polylines(frame, [puntos], False, color, 2)
+        # Dibujar trayectorias activas SOLO si no hay carriles detectados
+        if not carriles_activos:
+            for track_id, trayectoria in mapa.trayectorias.items():
+                if len(trayectoria) > 1:
+                    if track_id not in colores_track:
+                        colores_track[track_id] = colores[len(colores_track) % len(colores)]
+                    color = colores_track[track_id]
+                    puntos = np.array(list(trayectoria), dtype=np.int32)
+                    cv2.polylines(frame, [puntos], False, color, 2)
 
         # Dibujar vehículos con asignación de carril
         for track_id, track_data in tracker.tracks.items():
@@ -420,6 +430,19 @@ def main():
                 else:
                     cv2.putText(frame, f"ID:{track_id}", (int(x), int(y) - 10),
                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+
+        # Indicador de modo
+        if carriles_activos:
+            modo_texto = "MODO: CARRILES ACTIVOS"
+            modo_color = (0, 255, 0)  # Verde
+        else:
+            modo_texto = "MODO: APRENDIZAJE"
+            modo_color = (0, 255, 255)  # Amarillo
+
+        cv2.rectangle(frame, (10, 10), (350, 50), (0, 0, 0), -1)
+        cv2.rectangle(frame, (10, 10), (350, 50), modo_color, 2)
+        cv2.putText(frame, modo_texto, (20, 35),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, modo_color, 2)
 
         # Info
         info = f"Frame: {frame_count} | Tracks: {len(tracker.tracks)} | Carriles: {len(analizador.carriles)} | Trayectorias: {len(analizador.trayectorias_completas)}"
